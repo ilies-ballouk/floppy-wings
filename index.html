@@ -232,7 +232,7 @@ class Bird {
     this.deathTimer = 0;
   }
   flap(gravity) {
-    this.vy = -gravity * 8.5;
+    this.vy = -gravity * 10.5;
     this.wingAngle = -0.8;
   }
   update(gravity, H, groundH) {
@@ -496,14 +496,94 @@ class Ground {
   }
 }
 
+// ─── World Themes (change every 20 pipes) ────────────────────────
+function hexToRgb(h) {
+  h = h.replace('#','');
+  if (h.length === 3) h = h.split('').map(c=>c+c).join('');
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+}
+function lerpColor(a, b, t) {
+  const ca = hexToRgb(a), cb = hexToRgb(b);
+  const r = Math.round(ca[0] + (cb[0]-ca[0])*t);
+  const g = Math.round(ca[1] + (cb[1]-ca[1])*t);
+  const bl = Math.round(ca[2] + (cb[2]-ca[2])*t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+const WORLDS = [
+  {
+    name: 'ESPACE',
+    skyTop: '#05051a', skyBot: '#1a0a3e',
+    labelColor: '#00f5ff',
+    nebulas: [
+      { x:0.2, y:0.15, r:0.35, color:'rgba(80,0,200,0.07)', a:1 },
+      { x:0.75, y:0.4, r:0.3, color:'rgba(0,80,200,0.06)', a:1 },
+      { x:0.5, y:0.6, r:0.25, color:'rgba(150,0,150,0.05)', a:1 },
+    ]
+  },
+  {
+    name: 'AURORE',
+    skyTop: '#001a10', skyBot: '#003d1f',
+    labelColor: '#39ff14',
+    nebulas: [
+      { x:0.5, y:0.2, r:0.5, color:'rgba(0,255,100,0.07)', a:1 },
+      { x:0.2, y:0.5, r:0.3, color:'rgba(0,200,60,0.06)', a:1 },
+      { x:0.8, y:0.3, r:0.35, color:'rgba(100,255,0,0.05)', a:1 },
+    ]
+  },
+  {
+    name: 'COUCHER DE SOLEIL',
+    skyTop: '#1a0500', skyBot: '#3d1500',
+    labelColor: '#ff6d00',
+    nebulas: [
+      { x:0.5, y:0.3, r:0.55, color:'rgba(255,100,0,0.09)', a:1 },
+      { x:0.1, y:0.6, r:0.3, color:'rgba(255,50,0,0.06)', a:1 },
+      { x:0.9, y:0.5, r:0.3, color:'rgba(200,0,50,0.06)', a:1 },
+    ]
+  },
+  {
+    name: 'OCEAN PROFOND',
+    skyTop: '#000d1a', skyBot: '#001a33',
+    labelColor: '#00b8ff',
+    nebulas: [
+      { x:0.3, y:0.25, r:0.4, color:'rgba(0,100,255,0.08)', a:1 },
+      { x:0.7, y:0.5, r:0.35, color:'rgba(0,50,200,0.07)', a:1 },
+      { x:0.5, y:0.7, r:0.3, color:'rgba(0,200,255,0.05)', a:1 },
+    ]
+  },
+  {
+    name: 'VOLCAN',
+    skyTop: '#1a0000', skyBot: '#3d0500',
+    labelColor: '#ff1744',
+    nebulas: [
+      { x:0.5, y:0.8, r:0.5, color:'rgba(255,50,0,0.1)', a:1 },
+      { x:0.2, y:0.4, r:0.3, color:'rgba(200,0,0,0.07)', a:1 },
+      { x:0.8, y:0.3, r:0.3, color:'rgba(255,100,0,0.06)', a:1 },
+    ]
+  },
+  {
+    name: 'GALAXIE',
+    skyTop: '#0a001a', skyBot: '#1a0033',
+    labelColor: '#ea00ff',
+    nebulas: [
+      { x:0.4, y:0.3, r:0.5, color:'rgba(180,0,255,0.1)', a:1 },
+      { x:0.7, y:0.6, r:0.4, color:'rgba(100,0,200,0.08)', a:1 },
+      { x:0.2, y:0.7, r:0.35, color:'rgba(255,0,150,0.07)', a:1 },
+    ]
+  },
+];
+
 // ─── Game ─────────────────────────────────────────────────────────
 class Game {
   constructor(W, H) {
     this.resize(W, H, true);
     this.bestScore = parseInt(localStorage.getItem('floppyBest') || '0');
-    this.state = 'menu'; // menu | playing | dead
+    this.state = 'menu';
     this.particles = [];
     this.flashing = 0;
+    this.worldIndex = 0;
+    this.worldTransition = 1;
+    this.worldTransitioning = false;
     this.updateBestDisplay();
     this.showMenuScreen();
   }
@@ -514,8 +594,8 @@ class Game {
     this.birdSize = Math.min(W, H) * 0.09;
     this.pipeW = Math.min(W * 0.14, 72);
     this.pipeGap = Math.min(H * 0.32, 200);
-    this.gravity = H * 0.0009;
-    this.baseSpeed = W * 0.004;
+    this.gravity = H * 0.00055;
+    this.baseSpeed = W * 0.0065;
 
     if (!init) {
       this.stars = new Stars(W, H);
@@ -575,6 +655,10 @@ class Game {
     this.speed = this.baseSpeed;
     this.frameCount = 0;
     this.flashing = 0;
+    this.worldIndex = 0;
+    this.worldTransition = 0; // 0..1 blend
+    this.worldTransitioning = false;
+    this.lastWorldScore = 0;
     this.state = 'playing';
     screen.classList.add('hidden');
     scoreEl.classList.add('visible');
@@ -620,11 +704,11 @@ class Game {
 
     if (this.state === 'playing') {
       this.frameCount++;
-      this.speed = this.baseSpeed + this.score * 0.012;
+      this.speed = this.baseSpeed + this.score * 0.008;
       // Update pipes speed
       this.pipes.forEach(p => p.speed = this.speed);
 
-      if (this.frameCount % Math.max(60, Math.round(this.pipeInterval / this.speed)) === 0) {
+      if (this.frameCount % Math.max(55, Math.round(this.pipeInterval / this.speed)) === 0) {
         this.spawnPipe();
       }
 
@@ -633,7 +717,7 @@ class Game {
       this.pipes.forEach(p => p.update());
       this.pipes = this.pipes.filter(p => !p.isOffscreen());
 
-      // Score
+      // Score + world transition trigger
       this.pipes.forEach(p => {
         if (!p.scored && p.x + p.pipeW < this.bird.x) {
           p.scored = true;
@@ -643,8 +727,20 @@ class Game {
             this.bestScore = this.score;
             localStorage.setItem('floppyBest', this.bestScore);
           }
+          // Every 20 pipes, advance world
+          if (this.score % 20 === 0) {
+            this.worldIndex = Math.min(this.worldIndex + 1, WORLDS.length - 1);
+            this.worldTransition = 0;
+            this.worldTransitioning = true;
+          }
         }
       });
+
+      // Smooth world blend
+      if (this.worldTransitioning) {
+        this.worldTransition = Math.min(1, this.worldTransition + 0.012);
+        if (this.worldTransition >= 1) this.worldTransitioning = false;
+      }
 
       // Collision
       if (this.bird.alive) {
@@ -670,28 +766,54 @@ class Game {
   }
 
   drawBackground() {
-    // Sky gradient
-    const grd = this.ctx.createLinearGradient(0, 0, 0, this.H - this.groundH);
-    grd.addColorStop(0, '#05051a');
-    grd.addColorStop(0.5, '#0d0d35');
-    grd.addColorStop(1, '#1a0a3e');
-    this.ctx.fillStyle = grd;
-    this.ctx.fillRect(0, 0, this.W, this.H);
+    const ctx = this.ctx;
+    const wi = this.worldIndex;
+    const wPrev = Math.max(0, wi - 1);
+    const t = this.worldTransitioning ? this.worldTransition : 1;
 
-    // Nebula blobs
-    this.drawNebula(this.W * 0.2, this.H * 0.15, this.W * 0.35, 'rgba(80,0,200,0.06)');
-    this.drawNebula(this.W * 0.75, this.H * 0.4, this.W * 0.3, 'rgba(0,80,200,0.05)');
-    this.drawNebula(this.W * 0.5, this.H * 0.6, this.W * 0.25, 'rgba(150,0,150,0.04)');
-  }
+    // Blend two worlds
+    const w0 = WORLDS[wPrev];
+    const w1 = WORLDS[wi];
+    const blend = (a, b, t) => {
+      // Parse hex or rgba colors by interpolating
+      return lerpColor(a, b, t);
+    };
 
-  drawNebula(x, y, r, color) {
-    const g = this.ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, color);
-    g.addColorStop(1, 'transparent');
-    this.ctx.fillStyle = g;
-    this.ctx.beginPath();
-    this.ctx.arc(x, y, r, 0, Math.PI * 2);
-    this.ctx.fill();
+    // Sky gradient blended
+    const skyTop = blend(w0.skyTop, w1.skyTop, t);
+    const skyBot = blend(w0.skyBot, w1.skyBot, t);
+    const grd = ctx.createLinearGradient(0, 0, 0, this.H - this.groundH);
+    grd.addColorStop(0, skyTop);
+    grd.addColorStop(1, skyBot);
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, this.W, this.H);
+
+    // Nebula / atmosphere blobs
+    w1.nebulas.forEach(n => {
+      ctx.save();
+      ctx.globalAlpha = n.a * t;
+      const g = ctx.createRadialGradient(this.W*n.x, this.H*n.y, 0, this.W*n.x, this.H*n.y, this.W*n.r);
+      g.addColorStop(0, n.color);
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(this.W*n.x, this.H*n.y, this.W*n.r, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // World name flash when transitioning
+    if (this.worldTransitioning && this.worldTransition < 0.6) {
+      ctx.save();
+      ctx.globalAlpha = Math.sin(this.worldTransition * Math.PI) * 0.9;
+      ctx.fillStyle = w1.labelColor || '#fff';
+      ctx.font = `bold ${Math.round(this.W * 0.05)}px 'Press Start 2P', monospace`;
+      ctx.textAlign = 'center';
+      ctx.shadowColor = w1.labelColor || '#fff';
+      ctx.shadowBlur = 20;
+      ctx.fillText(w1.name, this.W / 2, this.H * 0.5);
+      ctx.restore();
+    }
   }
 
   draw() {
