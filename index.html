@@ -671,7 +671,7 @@ class Game {
 
   tap() {
     if (this.state === 'menu') { this.start(); return; }
-    if (this.state === 'dead') { this.state = 'menu'; this.showMenuScreen(); return; }
+    if (this.state === 'dead') { this.start(); return; }
     if (this.state === 'playing' && this.bird.alive) {
       this.bird.flap(this.gravity);
     }
