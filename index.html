@@ -869,10 +869,11 @@ game = new Game(canvas.width, canvas.height);
 
 function handleTap(e) {
   e.preventDefault();
+  e.stopPropagation();
   game.tap();
 }
-canvas.addEventListener('touchstart', handleTap, { passive: false });
 document.addEventListener('touchstart', handleTap, { passive: false });
+document.addEventListener('mousedown', handleTap);
 document.addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); game.tap(); } });
 
 game.loop();
