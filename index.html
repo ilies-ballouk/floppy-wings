@@ -240,7 +240,17 @@ class Bird {
     this.wingAngle = -0.8;
   }
   update(gravity, H, groundH) {
-    if (!this.alive) { this.deathTimer++; return; }
+    if (!this.alive) {
+      // Continue falling under gravity until hitting ground
+      this.vy += gravity;
+      this.y += this.vy;
+      this.angle = Math.min(1.5, this.angle + 0.08);
+      if (this.y + this.size / 2 >= H - groundH) {
+        this.y = H - groundH - this.size / 2;
+        this.vy = 0;
+      }
+      return;
+    }
     this.vy += gravity;
     this.y += this.vy;
     this.angle = Math.max(-0.5, Math.min(1.2, this.vy * 0.07));
@@ -660,9 +670,8 @@ class Game {
     this.frameCount = 0;
     this.flashing = 0;
     this.worldIndex = 0;
-    this.worldTransition = 0; // 0..1 blend
+    this.worldTransition = 1;
     this.worldTransitioning = false;
-    this.lastWorldScore = 0;
     this.state = 'playing';
     screen.classList.add('hidden');
     scoreEl.classList.add('visible');
