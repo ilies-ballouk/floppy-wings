@@ -294,54 +294,56 @@ class Bird {
     this.wingDir = 1;
     this.trail = [];
     this.alive = true;
+    this.stunned = false;
     this.deathTimer = 0;
   }
   flap(gravity) {
+    if (!this.alive || this.stunned) return;
     this.vy = -gravity * 10.5;
     this.wingAngle = -0.8;
     sfxFlap();
   }
+  stun() {
+    this.stunned = true;
+    this.vy = 2;
+  }
   update(gravity, H, groundH) {
     if (!this.alive) {
-      /* FIX #1 : on applique la gravité mais on arrête tout le reste */
       this.vy += gravity;
       this.y  += this.vy;
       this.angle = Math.min(1.5, this.angle + 0.08);
       const groundY = H - groundH - this.size / 2;
-      if (this.y >= groundY) {
-        this.y  = groundY;
-        this.vy = 0;
-      }
+      if (this.y >= groundY) { this.y = groundY; this.vy = 0; }
       return;
     }
     this.vy += gravity;
     this.y  += this.vy;
     this.angle = Math.max(-0.5, Math.min(1.2, this.vy * 0.07));
 
-    /* FIX #5 : plafond = mort immédiate */
     if (this.y - this.size / 2 <= 0) {
-      this.y  = this.size / 2;
+      this.y = this.size / 2;
       this.vy = 0;
-      this.alive = false;
-      sfxDie();
+      if (!this.stunned) this.stun();
       return;
     }
 
-    /* toucher le sol = mort */
+    /* seule mort possible : le sol */
     if (this.y + this.size / 2 >= H - groundH) {
-      this.y     = H - groundH - this.size / 2;
-      this.alive = false;
+      this.y       = H - groundH - this.size / 2;
+      this.alive   = false;
+      this.stunned = false;
       sfxDie();
       return;
     }
 
-    this.wingAngle += this.wingDir * 0.18;
-    if (this.wingAngle >  0.5) this.wingDir = -1;
-    if (this.wingAngle < -0.8) this.wingDir =  1;
-
-    this.trail.unshift({x: this.x, y: this.y, alpha: 0.5});
-    if (this.trail.length > 8) this.trail.pop();
-    this.trail.forEach((t, i) => t.alpha = (1 - i / 8) * 0.4);
+    if (!this.stunned) {
+      this.wingAngle += this.wingDir * 0.18;
+      if (this.wingAngle >  0.5) this.wingDir = -1;
+      if (this.wingAngle < -0.8) this.wingDir =  1;
+      this.trail.unshift({x: this.x, y: this.y, alpha: 0.5});
+      if (this.trail.length > 8) this.trail.pop();
+      this.trail.forEach((t, i) => t.alpha = (1 - i / 8) * 0.4);
+    }
   }
   draw(ctx) {
     const s = this.size;
@@ -760,7 +762,7 @@ class Game {
     /* FIX #6 : vitesse plafonnée à 2.5× la base */
     this.speed = Math.min(this.baseSpeed * 2.5, this.baseSpeed + this.score * 0.006);
 
-    const birdMoving = this.bird.alive;
+    const birdMoving = this.bird.alive && !this.bird.stunned;
 
     /* FIX #1/#3 : tuyaux bougent seulement si l'oiseau est vivant */
     if (birdMoving) {
@@ -786,27 +788,28 @@ class Game {
     /* FIX #1 : sol bouge seulement si oiseau vivant */
     this.ground.update(this.speed, birdMoving);
 
-    /* Score */
-    this.pipes.forEach(p => {
-      if (!p.scored && p.x + p.pipeW < this.bird.x) {
-        p.scored = true;
-        this.score++;
-        scoreEl.textContent = this.score;
-        sfxScore();
-        if (this.score > this.bestScore) {
-          this.bestScore = this.score;
-          localStorage.setItem('floppyBest', this.bestScore);
-          this.updateBestDisplay();
+    /* Score — uniquement si l'oiseau est encore vivant */
+    if (this.bird.alive) {
+      this.pipes.forEach(p => {
+        if (!p.scored && p.x + p.pipeW < this.bird.x) {
+          p.scored = true;
+          this.score++;
+          scoreEl.textContent = this.score;
+          sfxScore();
+          if (this.score > this.bestScore) {
+            this.bestScore = this.score;
+            localStorage.setItem('floppyBest', this.bestScore);
+            this.updateBestDisplay();
+          }
+          if (this.score % 20 === 0) {
+            this.worldIndex = Math.min(this.worldIndex + 1, WORLDS.length - 1);
+            this.worldTransition    = 0;
+            this.worldTransitioning = true;
+            this.worldLabelTimer    = 120;
+          }
         }
-        /* FIX #8 : transition monde toutes les 20 pipes */
-        if (this.score % 20 === 0) {
-          this.worldIndex = Math.min(this.worldIndex + 1, WORLDS.length - 1);
-          this.worldTransition    = 0;
-          this.worldTransitioning = true;
-          this.worldLabelTimer    = 120; /* frames d'affichage du label */
-        }
-      }
-    });
+      });
+    }
 
     if (this.worldTransitioning) {
       this.worldTransition = Math.min(1, this.worldTransition + 0.012);
@@ -821,21 +824,19 @@ class Game {
       this.worldLabelAlpha = 0;
     }
 
-    /* FIX #4 : collision circulaire */
-    if (this.bird.alive) {
+    /* Collision tuyau : étourdissement seulement (plus de vol, tombe au sol) */
+    if (this.bird.alive && !this.bird.stunned) {
       const cr = this.bird.getRadius();
       for (const p of this.pipes) {
         if (p.collidesWithCircle(this.bird.x, this.bird.y, cr)) {
-          this.bird.alive = false;
-          this.bird.vy = -2;
+          this.bird.stun();
           this.explode(this.bird.x, this.bird.y);
-          sfxDie();
           break;
         }
       }
     }
 
-    /* FIX #2 : délai de mort fixe = 90 frames (~1.5 s à 60fps) */
+    /* Mort confirmée uniquement quand l'oiseau touche le sol */
     if (!this.bird.alive) {
       this.bird.deathTimer++;
       if (this.bird.deathTimer >= 90) {
